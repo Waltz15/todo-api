@@ -9,6 +9,10 @@ const swaggerDocument = {
   },
   servers: [
     {
+    url: "https://todo-api-hadi-azka.vercel.app/",
+    description: "Production Server Vercel",
+  },
+    {
       url: 'http://localhost:3000',
       description: 'Development Server'
     }
