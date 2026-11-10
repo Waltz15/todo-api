@@ -7,95 +7,110 @@ async function createTodo(data) {
     category_id: data.category_id,
     created_by: data.created_by,
   });
-  return await todo.save();
+  await todo.save();
+  return await todo.populate("category_id", "name");
+}
+
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Menyusun filter, sorting, dan pagination dari query string
+function buildListQuery(baseFilter, queryOptions) {
+  const {
+    page = 1,
+    limit = 10,
+    completed,
+    status,
+    category,
+    sort,
+    sortBy = "createdAt",
+    order = "desc",
+    search,
+  } = queryOptions;
+
+  const filter = { ...baseFilter, archived: false };
+
+  // Filter status: ?status=completed|pending atau ?completed=true|false
+  if (status) {
+    filter.completed = status === "completed";
+  }
+  if (completed !== undefined) {
+    filter.completed = completed === "true";
+  }
+
+  // Filter kategori: ?category=<categoryId>
+  if (category) {
+    filter.category_id = category;
+  }
+
+  // Search berdasarkan title (case-insensitive)
+  if (search) {
+    filter.title = { $regex: escapeRegex(search), $options: "i" };
+  }
+
+  // Sorting: ?sort=-createdAt atau ?sortBy=createdAt&order=desc
+  let sortField = sortBy;
+  let sortDirection = order === "asc" ? 1 : -1;
+  if (sort) {
+    sortField = sort.replace(/^-/, "");
+    sortDirection = sort.startsWith("-") ? -1 : 1;
+  }
+
+  return {
+    filter,
+    sortOption: { [sortField]: sortDirection },
+    page: Number(page),
+    limit: Number(limit),
+  };
+}
+
+async function findTodos(baseFilter, queryOptions, populateOwner = false) {
+  const { filter, sortOption, page, limit } = buildListQuery(baseFilter, queryOptions);
+  const skip = (page - 1) * limit;
+
+  let todoQuery = Todo.find(filter)
+    .sort(sortOption)
+    .skip(skip)
+    .limit(limit)
+    .populate("category_id", "name");
+
+  if (populateOwner) {
+    todoQuery = todoQuery.populate("created_by", "name email");
+  }
+
+  const [todos, totalItems] = await Promise.all([todoQuery, Todo.countDocuments(filter)]);
+
+  return {
+    todos,
+    pagination: {
+      currentPage: page,
+      totalPages: Math.ceil(totalItems / limit),
+      totalItems,
+      itemsPerPage: limit,
+    },
+  };
 }
 
 async function getAllTodos(userId, queryOptions) {
-  // Tambahin 'search' di destructuring
-  const { page = 1, limit = 10, completed, sortBy = "createdAt", order = "desc", search } = queryOptions;
-
-  const filter = { created_by: userId, archived: false };
-
-  // Logic Filtering Completed
-  if (completed !== undefined) {
-    filter.completed = completed === "true";
-  }
-
-  // LOGIC SEARCH BARU (Berdasarkan Title)
-  if (search) {
-    filter.title = { $regex: search, $options: "i" };
-  }
-
-  const sortDirection = order === "asc" ? 1 : -1;
-  const skip = (Number(page) - 1) * Number(limit);
-
-  const [todos, totalItems] = await Promise.all([
-    Todo.find(filter)
-      .sort({ [sortBy]: sortDirection })
-      .skip(skip)
-      .limit(Number(limit))
-      .populate("category_id", "name"), // Pertahankan populate kategori
-    Todo.countDocuments(filter),
-  ]);
-
-  const totalPages = Math.ceil(totalItems / Number(limit));
-
-  return {
-    todos,
-    pagination: {
-      currentPage: Number(page),
-      totalPages,
-      totalItems,
-      itemsPerPage: Number(limit),
-    },
-  };
+  return await findTodos({ created_by: userId }, queryOptions);
 }
 
 async function getAllTodosForAdmin(queryOptions) {
-  // Tambahin 'search' di destructuring
-  const { page = 1, limit = 10, completed, sortBy = "createdAt", order = "desc", search } = queryOptions;
-
-  const filter = { archived: false };
-
-  // Logic Filtering Completed
-  if (completed !== undefined) {
-    filter.completed = completed === "true";
-  }
-
-  // LOGIC SEARCH BARU (Berdasarkan Title)
-  if (search) {
-    filter.title = { $regex: search, $options: "i" };
-  }
-
-  const sortDirection = order === "asc" ? 1 : -1;
-  const skip = (Number(page) - 1) * Number(limit);
-
-  const [todos, totalItems] = await Promise.all([
-    Todo.find(filter)
-      .sort({ [sortBy]: sortDirection })
-      .skip(skip)
-      .limit(Number(limit))
-      .populate("created_by", "name email")
-      .populate("category_id", "name"),
-    Todo.countDocuments(filter),
-  ]);
-
-  const totalPages = Math.ceil(totalItems / Number(limit));
-
-  return {
-    todos,
-    pagination: {
-      currentPage: Number(page),
-      totalPages,
-      totalItems,
-      itemsPerPage: Number(limit),
-    },
-  };
+  return await findTodos({}, queryOptions, true);
 }
 
 async function getTodoById(id) {
-  return await Todo.findOne({ _id: id, archived: false })
-    .populate("category_id", "name");
+  return await Todo.findOne({ _id: id, archived: false }).populate("category_id", "name");
+}
+
+// Termasuk todo yang sudah diarsip (dipakai untuk hard delete)
+async function getTodoByIdIncludingArchived(id) {
+  return await Todo.findById(id);
+}
+
+async function getArchivedTodoById(id) {
+  return await Todo.findOne({ _id: id, archived: true });
 }
 
 async function updateTodo(id, data) {
@@ -109,34 +124,29 @@ async function updateTodo(id, data) {
       updated_by: data.updated_by,
     },
     { new: true, runValidators: true }
-  );
+  ).populate("category_id", "name");
 }
 
-// Soft Delete (milik lu dipertahankan)
-async function deleteTodo(id) {
+// Soft Delete
+async function deleteTodo(id, userId) {
+  return await Todo.findByIdAndUpdate(id, { archived: true, updated_by: userId }, { new: true });
+}
+
+// Restore
+async function restoreTodo(id, userId) {
   return await Todo.findByIdAndUpdate(
-    id, 
-    { archived: true }, 
+    id,
+    { archived: false, updated_by: userId },
     { new: true }
-  );
+  ).populate("category_id", "name");
 }
 
-// Restore (milik lu dipertahankan)
-const restoreTodo = async (id) => {
-  const todo = await Todo.findByIdAndUpdate(
-    id,
-    { archived: false }, 
-    { new: true } 
-  );
-  return todo;
-};
-
-// Hard Delete (milik lu dipertahankan)
-const hardDeleteTodo = async (id) => {
+// Hard Delete
+async function hardDeleteTodo(id) {
   return await Todo.findByIdAndDelete(id);
-};
+}
 
-// Filter Archived dari Kalkulasi Summary (milik lu dipertahankan)
+// Filter Archived dari Kalkulasi Summary
 async function getSummaryStats() {
   const totalTodos = await Todo.countDocuments({ archived: false });
   const completedTodos = await Todo.countDocuments({ completed: true, archived: false });
@@ -150,6 +160,8 @@ module.exports = {
   getAllTodos,
   getAllTodosForAdmin,
   getTodoById,
+  getArchivedTodoById,
+  getTodoByIdIncludingArchived,
   updateTodo,
   deleteTodo,
   getSummaryStats,

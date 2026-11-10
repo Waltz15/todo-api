@@ -1,6 +1,7 @@
 const authService = require("../services/auth.service");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/AppError");
+const logActivity = require("../utils/logActivity");
 
 const register = catchAsync(async (req, res, next) => {
     //Tangkap secret_key juga dari req.body
@@ -24,6 +25,14 @@ const register = catchAsync(async (req, res, next) => {
         role: assignedRole 
     });
 
+    await logActivity({
+        action: "REGISTER",
+        resource: "Auth",
+        userId: user._id,
+        resourceId: user._id,
+        details: `User baru terdaftar: ${user.email}`,
+    });
+
     res.status(201).json({
         success: true,
         message: "User registered successfully",
@@ -41,7 +50,15 @@ const login = catchAsync(async (req, res, next) => {
         return next(new AppError("Email and Password are required", 400));
     }
 
-    const { user, token } = await authService.login({ email, password});
+    const { user, token } = await authService.login({ email, password });
+
+    await logActivity({
+        action: "LOGIN",
+        resource: "Auth",
+        userId: user._id,
+        resourceId: user._id,
+        details: `User login: ${user.email}`,
+    });
 
     res.status(200).json ({
         success: true,

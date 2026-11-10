@@ -1,10 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { protect, isAdmin } = require("../middlewares/auth.middleware");
+const activityLogController = require("../controllers/activityLog.controller");
+const { protect } = require("../middlewares/auth.middleware");
+const validate = require("../middlewares/validate.middleware");
+const { getActivityLogsRules } = require("../validators/activityLog.validator");
 
-// Endpoint untuk melihat daftar activity log
-router.get("/", protect, isAdmin, (req, res) => {
-    res.status(200).json({ message: "Menampilkan semua activity log" });
-});
+// User melihat riwayat miliknya sendiri, admin melihat semua
+router.get("/", protect, getActivityLogsRules, validate, activityLogController.getActivityLogs);
 
 module.exports = router;

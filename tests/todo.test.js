@@ -1,20 +1,6 @@
 const request = require("supertest");
 const app = require("../src/app");
-
-async function registerAndLogin(email = "budi@example.com") {
-  await request(app).post("/api/auth/register").send({
-    name: "Budi",
-    email,
-    password: "rahasia1234567", // <--- Udah diganti jadi 12+ karakter
-  });
-
-  const loginRes = await request(app).post("/api/auth/login").send({
-    email,
-    password: "rahasia1234567", // <--- Udah diganti jadi 12+ karakter
-  });
-
-  return loginRes.body.data.token;
-}
+const { registerAndLogin } = require("./helpers/auth");
 
 describe("Todo Endpoints", () => {
   let token;
@@ -135,6 +121,88 @@ describe("Todo Endpoints", () => {
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe("GET /api/todos sort & filter", () => {
+    beforeEach(async () => {
+      for (const title of ["Bbb todo", "Aaa todo", "Ccc todo"]) {
+        await request(app).post("/api/todos").set("Authorization", `Bearer ${token}`).send({ title });
+      }
+    });
+
+    it("should sort with ?sort=title (ascending)", async () => {
+      const res = await request(app).get("/api/todos?sort=title").set("Authorization", `Bearer ${token}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.map((t) => t.title)).toEqual(["Aaa todo", "Bbb todo", "Ccc todo"]);
+    });
+
+    it("should sort with ?sort=-title (descending)", async () => {
+      const res = await request(app).get("/api/todos?sort=-title").set("Authorization", `Bearer ${token}`);
+
+      expect(res.body.data.map((t) => t.title)).toEqual(["Ccc todo", "Bbb todo", "Aaa todo"]);
+    });
+
+    it("should reject an unknown sort field", async () => {
+      const res = await request(app).get("/api/todos?sort=-password").set("Authorization", `Bearer ${token}`);
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("should filter by ?status=completed and ?status=pending", async () => {
+      const list = await request(app).get("/api/todos").set("Authorization", `Bearer ${token}`);
+      await request(app)
+        .put(`/api/todos/${list.body.data[0]._id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ completed: true });
+
+      const done = await request(app).get("/api/todos?status=completed").set("Authorization", `Bearer ${token}`);
+      const pending = await request(app).get("/api/todos?status=pending").set("Authorization", `Bearer ${token}`);
+
+      expect(done.body.data.length).toBe(1);
+      expect(pending.body.data.length).toBe(2);
+    });
+  });
+
+  describe("PUT /api/todos/:id/restore", () => {
+    it("should not let another user restore (or change) someone else's todo", async () => {
+      const createRes = await request(app)
+        .post("/api/todos")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "Todo milik Budi" });
+      const todoId = createRes.body.data._id;
+      await request(app).delete(`/api/todos/${todoId}`).set("Authorization", `Bearer ${token}`);
+
+      const otherToken = await registerAndLogin("siti@example.com");
+      const res = await request(app)
+        .put(`/api/todos/${todoId}/restore`)
+        .set("Authorization", `Bearer ${otherToken}`);
+      expect(res.statusCode).toBe(403);
+
+      // Todo harus tetap terarsip
+      const getRes = await request(app).get(`/api/todos/${todoId}`).set("Authorization", `Bearer ${token}`);
+      expect(getRes.statusCode).toBe(404);
+    });
+  });
+
+  describe("DELETE /api/todos/:id/force", () => {
+    it("should permanently delete a todo that is already archived", async () => {
+      const createRes = await request(app)
+        .post("/api/todos")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "Todo diarsip" });
+      const todoId = createRes.body.data._id;
+      await request(app).delete(`/api/todos/${todoId}`).set("Authorization", `Bearer ${token}`);
+
+      const res = await request(app)
+        .delete(`/api/todos/${todoId}/force`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.statusCode).toBe(200);
+
+      const restoreRes = await request(app)
+        .put(`/api/todos/${todoId}/restore`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(restoreRes.statusCode).toBe(404);
     });
   });
 });

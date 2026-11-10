@@ -16,9 +16,18 @@ const categorySchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    updated_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    archived: {
+      type: Boolean,
+      default: false,
+    },
   },
-  { 
-    timestamps: true 
+  {
+    timestamps: true,
   }
 );
 
