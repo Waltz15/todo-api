@@ -1,5 +1,16 @@
 const { body, param, query } = require("express-validator");
 
+const SORTABLE_FIELDS = ["createdAt", "updatedAt", "title", "completed"];
+
+// category_id boleh dikirim dengan nama "category_id" atau "category".
+// Nilai null berarti todo tidak memakai kategori.
+const categoryRules = ["category_id", "category"].map((field) =>
+  body(field)
+    .optional({ values: "null" })
+    .isMongoId()
+    .withMessage("Invalid category ID format")
+);
+
 const createTodoRules = [
   body("title")
     .trim()
@@ -13,6 +24,8 @@ const createTodoRules = [
     .trim()
     .isLength({ max: 500 })
     .withMessage("Description must not exceed 500 characters"),
+
+  ...categoryRules,
 ];
 
 const updateTodoRules = [
@@ -34,6 +47,8 @@ const updateTodoRules = [
     .optional()
     .isBoolean()
     .withMessage("Completed must be true or false"),
+
+  ...categoryRules,
 ];
 
 const getTodoByIdRules = [param("id").isMongoId().withMessage("Invalid todo ID format")];
@@ -54,10 +69,26 @@ const getAllTodosRules = [
     .isBoolean()
     .withMessage("Completed filter must be true or false"),
 
+  query("status")
+    .optional()
+    .isIn(["completed", "pending"])
+    .withMessage("status must be 'completed' or 'pending'"),
+
+  query("category")
+    .optional()
+    .isMongoId()
+    .withMessage("Invalid category ID format"),
+
+  // Format singkat: sort=-createdAt (desc) atau sort=title (asc)
+  query("sort")
+    .optional()
+    .isIn(SORTABLE_FIELDS.flatMap((field) => [field, `-${field}`]))
+    .withMessage(`sort must be one of: ${SORTABLE_FIELDS.join(", ")} (prefix '-' for descending)`),
+
   query("sortBy")
     .optional()
-    .isIn(["createdAt", "title", "completed"])
-    .withMessage("sortBy must be one of: createdAt, title, completed"),
+    .isIn(SORTABLE_FIELDS)
+    .withMessage(`sortBy must be one of: ${SORTABLE_FIELDS.join(", ")}`),
 
   query("order")
     .optional()
