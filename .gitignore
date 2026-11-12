@@ -1,2 +1,7 @@
 node_modules/
-.env
+
+# Environment files berisi kredensial, jangan di-commit
+.env*
+# Kecuali file contoh yang hanya berisi placeholder
+!.env.example
+!.env.test.example
