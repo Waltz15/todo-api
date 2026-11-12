@@ -63,6 +63,7 @@ todo-api/
 │   └── swagger.js     # Spesifikasi OpenAPI & Swagger UI
 ├── tests/             # Automated test (auth, todo, category, activityLog, stats)
 ├── .env.example       # Contoh konfigurasi environment
+├── .env.test.example  # Contoh konfigurasi untuk test (opsional)
 └── vercel.json        # Konfigurasi deploy Vercel
 ```
 
@@ -172,15 +173,15 @@ POST /api/auth/register
 
 ## Menjalankan Test
 
-Test memakai database MongoDB in-memory (`mongodb-memory-server`), jadi **tidak** mengganggu database asli. Konfigurasi test dibaca dari file `.env.test`:
+Test memakai database MongoDB in-memory (`mongodb-memory-server`), jadi **tidak** mengganggu database asli.
 
-```env
-NODE_ENV=test
-JWT_SECRET=secret_untuk_test
-JWT_EXPIRES_IN=1d
-EXTERNAL_API_KEY=api_key_untuk_test
-ADMIN_SECRET_KEY=admin_key_untuk_test
+Test bisa langsung dijalankan **tanpa** file `.env.test`, karena `tests/setup.js` sudah menyediakan nilai default khusus test. Jika ingin memakai nilai sendiri, salin file contohnya (file `.env.test` tidak di-commit ke Git):
+
+```bash
+cp .env.test.example .env.test
 ```
+
+> Jangan pernah mengisi `.env.test` dengan kredensial production.
 
 Jalankan:
 
